@@ -1,5 +1,6 @@
 GOFMT_FILES?=$$(find . -name '*.go')
 NODE_ID=node-$$(ifconfig -a|grep inet|grep -v 127.0.0.1|grep -v inet6|awk '{print $2}'|tr -d "addr:" | md5)
+RAFT_ADDRESS_CONFIG = $$(find . -name '*.env' | xargs sed -n '/RAFT_ADDRESS/p')
 RAFT_ADDRESS = localhost:8089
 HTTP_ADDRESS = localhost:8091
 LEADER_ADDRESS = leader:8091 # 能不能从配置文件获取？
