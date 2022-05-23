@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pangjiping/raftdb/config"
+
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 )
@@ -17,8 +19,9 @@ import (
 // Store is a simple key-value store,
 // where all changes are made via raft.
 type Store struct {
-	mu sync.Mutex
-	m  map[string]string // The key value store for the system.
+	mu     sync.Mutex
+	m      map[string]string // The key value store for the system.
+	config config.Config
 
 	raft   *raft.Raft // The consensus mechanism.
 	logger *log.Logger
@@ -28,10 +31,18 @@ type Store struct {
 }
 
 func NewStore() *Store {
-	return &Store{
+	store := &Store{
+		mu:     sync.Mutex{},
 		m:      make(map[string]string),
 		logger: log.New(os.Stderr, " [store] ", log.LstdFlags),
 	}
+
+	config, err := config.LoadConfig("$GOPATH/src/github.com/Pangjiping/raftdb")
+	if err != nil {
+		store.logger.Fatalf("Failed to load config: %v", err)
+	}
+	store.config = config
+	return store
 }
 
 func (store *Store) LeaderAddr() string {
@@ -85,14 +96,14 @@ func (store *Store) Open(enableSingle bool, localID string) error {
 	if err != nil {
 		return err
 	}
-	transport, err := raft.NewTCPTransport(store.RaftBind, addr, 3, 10*time.Second, os.Stderr)
+	transport, err := raft.NewTCPTransport(store.RaftBind, addr, store.config.TransportMaxPool, store.config.TransportTimeout, os.Stderr)
 	if err != nil {
 		return err
 	}
 
 	// create the snapshot store.
 	// this allows the raft to truncate the log.
-	snapshots, err := raft.NewFileSnapshotStore(store.RaftDir, retainSnapshotCount, os.Stderr)
+	snapshots, err := raft.NewFileSnapshotStore(store.RaftDir, store.config.RetainSnapshotCount, os.Stderr)
 	if err != nil {
 		return fmt.Errorf("File snapshot store: %s", err)
 	}
@@ -134,7 +145,7 @@ func (store *Store) Open(enableSingle bool, localID string) error {
 
 // WaitForLeader blocks until a leader is detected, or the timeout expires.
 func (store *Store) WaitForLeader(timeout time.Duration) (string, error) {
-	tck := time.NewTicker(leaderWaitDelay)
+	tck := time.NewTicker(store.config.LeaderWaitDelay)
 	defer tck.Stop()
 	tmr := time.NewTimer(timeout)
 	defer tmr.Stop()
@@ -155,7 +166,7 @@ func (store *Store) WaitForLeader(timeout time.Duration) (string, error) {
 // WaitForAppliedIndex blocks until a given log index has been applied.
 // or the timeout expires.
 func (store *Store) WaitForAppliedIndex(idx uint64, timeout time.Duration) error {
-	tck := time.NewTicker(appliedWaitDelay)
+	tck := time.NewTicker(store.config.AppliedWaitDelay)
 	defer tck.Stop()
 	tmr := time.NewTimer(timeout)
 	defer tmr.Stop()
@@ -230,7 +241,7 @@ func (store *Store) Set(key, value string) error {
 		return err
 	}
 
-	f := store.raft.Apply(b, raftTimeout)
+	f := store.raft.Apply(b, store.config.RaftTimeout)
 	return f.Error()
 }
 
@@ -249,7 +260,7 @@ func (store *Store) Delete(key string) error {
 		return err
 	}
 
-	f := store.raft.Apply(b, raftTimeout)
+	f := store.raft.Apply(b, store.config.RaftTimeout)
 	return f.Error()
 }
 

@@ -58,6 +58,7 @@ func main() {
 
 	s := store.NewStore()
 	s.RaftDir = raftDir
+	log.Printf("raftdb snapshots location: %s", s.RaftDir)
 	s.RaftBind = raftAddr
 	if err := s.Open(joinAddr == "", nodeID); err != nil {
 		log.Fatalf("Failed to open store: %s", err.Error())
